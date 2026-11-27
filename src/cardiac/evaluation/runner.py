@@ -11,7 +11,7 @@ from cardiac.utils.runtime import setup, sync
 from cardiac.utils.io import digest, read_json, write_json, stable_seed
 
 
-def mc_predict(model, x, mask, times, passes):
+def mc_predict(model, x, mask, times, passes, use_amp=False):
     """Only explicit Dropout modules enter training mode. Restore all flags."""
     if passes < 2:
         raise ValueError('At least two MC dropout passes are required.')
@@ -22,7 +22,8 @@ def mc_predict(model, x, mask, times, passes):
             if isinstance(module, nn.Dropout):
                 module.train()
         with torch.no_grad():
-            values = torch.stack([100.0 * model(x, mask, times) for _ in range(passes)])
+            with torch.autocast(device_type=x.device.type, enabled=use_amp):
+                values = torch.stack([100.0 * model(x, mask, times) for _ in range(passes)])
         return values.mean(0), values.std(0, unbiased=True)
     finally:
         for module, state in states.items():
@@ -141,51 +142,71 @@ def evaluate(root, manifest_path, bank_path, checkpoint_path, output, device='au
             frames = video[indices]
             times = (indices - indices[0]).astype(np.float32) / c['stride']
 
+            # Group conditions by sequence length T so each group runs in a single GPU batch
+            grouped = {}
             for handling in handlings:
                 for pattern, conditions in entry['masks'].items():
                     for ratio, mask_list in conditions.items():
                         original_mask = np.array(mask_list, bool)
                         x, mask, timestamps = handle_missing(frames, original_mask, times, handling)
-                        x = torch.from_numpy(normalize(x)).unsqueeze(0).to(dev)
-                        mask = torch.from_numpy(mask).unsqueeze(0).to(dev)
-                        timestamps = torch.from_numpy(timestamps).unsqueeze(0).to(dev)
-
-                        shape = tuple(x.shape)
-                        if shape not in warmed:
-                            model(x, mask, timestamps)
-                            sync(dev)
-                            warmed.add(shape)
-
-                        sync(dev)
-                        start = time.perf_counter()
-                        pred = float(100.0 * model(x, mask, timestamps).item())
-                        sync(dev)
-                        elapsed = time.perf_counter() - start
-
-                        torch.manual_seed(
-                            stable_seed(c['seed'], entry['id'], entry['cohort'], pattern, ratio, handling, 'mc')
-                        )
-                        mean, std = mc_predict(model, x, mask, timestamps, mc_passes)
-
-                        rows.append({
-                            'model': meta['model'],
-                            'split': bank['split'],
-                            'cohort': entry['cohort'],
-                            'id': row['id'],
-                            'pattern': pattern,
+                        t_len = x.shape[0]
+                        grouped.setdefault(t_len, []).append({
+                            'x': normalize(x),
+                            'mask': mask,
+                            'timestamps': timestamps,
                             'handling': handling,
+                            'pattern': pattern,
                             'ratio': float(ratio),
                             'actual_ratio': float(1 - original_mask.mean()),
                             'missing_count': int((~original_mask).sum()),
-                            'target': row['ef'],
-                            'prediction': pred,
-                            'mc_mean': float(mean.item()),
-                            'mc_std': float(std.item()),
-                            'inference_seconds': elapsed,
-                            'bank_sha256': meta['bank_sha256'],
-                            'provenance': meta['provenance'],
-                            'preliminary': meta['preliminary']
                         })
+
+            for t_len, items in grouped.items():
+                bx = torch.from_numpy(np.stack([it['x'] for it in items], axis=0)).to(dev)
+                bmask = torch.from_numpy(np.stack([it['mask'] for it in items], axis=0)).to(dev)
+                btimes = torch.from_numpy(np.stack([it['timestamps'] for it in items], axis=0)).to(dev)
+
+                shape = tuple(bx.shape)
+                if shape not in warmed:
+                    with torch.autocast(device_type=dev.type, enabled=runtime['amp']):
+                        model(bx[:1], bmask[:1], btimes[:1])
+                    sync(dev)
+                    warmed.add(shape)
+
+                sync(dev)
+                start = time.perf_counter()
+                with torch.autocast(device_type=dev.type, enabled=runtime['amp']):
+                    preds = (100.0 * model(bx, bmask, btimes)).float().cpu().numpy()
+                sync(dev)
+                per_item_elapsed = (time.perf_counter() - start) / len(items)
+
+                torch.manual_seed(
+                    stable_seed(c['seed'], entry['id'], entry['cohort'], t_len, 'mc')
+                )
+                bmean, bstd = mc_predict(model, bx, bmask, btimes, mc_passes, use_amp=runtime['amp'])
+                means = bmean.float().cpu().numpy()
+                stds = bstd.float().cpu().numpy()
+
+                for i, it in enumerate(items):
+                    rows.append({
+                        'model': meta['model'],
+                        'split': bank['split'],
+                        'cohort': entry['cohort'],
+                        'id': row['id'],
+                        'pattern': it['pattern'],
+                        'handling': it['handling'],
+                        'ratio': it['ratio'],
+                        'actual_ratio': it['actual_ratio'],
+                        'missing_count': it['missing_count'],
+                        'target': row['ef'],
+                        'prediction': float(preds[i]),
+                        'mc_mean': float(means[i]),
+                        'mc_std': float(stds[i]),
+                        'inference_seconds': per_item_elapsed,
+                        'bank_sha256': meta['bank_sha256'],
+                        'provenance': meta['provenance'],
+                        'preliminary': meta['preliminary']
+                    })
 
             # Periodic progress log (first video, every 100 videos, or at the end)
             if (idx + 1) == 1 or (idx + 1) % 100 == 0 or idx == total_entries - 1:
