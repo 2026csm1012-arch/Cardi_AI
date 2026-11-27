@@ -90,7 +90,7 @@ def train(root, manifest_path, config_path, output, device='auto', limit=None, s
                     pass
             print(f"[DEBUG] Resumed at epoch {start_epoch + 1} with previous best Val MAE: {best:.4f}")
         else:
-            print(f"[WARNING] Resume checkpoint {resume_file} not found. Starting from scratch.")
+            print(f"[CHECKPOINT] No checkpoint found at {resume_file}. Starting fresh.")
 
     param_count = sum(p.numel() for p in model.parameters())
     metadata = {

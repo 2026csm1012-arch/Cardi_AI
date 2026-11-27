@@ -1,7 +1,7 @@
 {
   "model": "baseline",
   "corruption": false,
-  "epochs": 25,
+  "epochs": 30,
   "learning_rate": 0.0001,
   "accumulation": 4,
   "save_epochs": true
