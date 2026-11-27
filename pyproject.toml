@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cardiac-gap-ssm"
+version = "0.1.0"
+description = "Cardiac EF video regression under missing frames with Baseline (R3D) and Mamba (GapSSM)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "numpy>=1.22.0",
+    "pandas>=1.5.0",
+    "opencv-python-headless>=4.6.0",
+    "matplotlib>=3.6.0"
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0.0"]
+report = ["reportlab>=3.6.0"]
+
+[project.scripts]
+cardiac = "cardiac.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
