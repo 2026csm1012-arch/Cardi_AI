@@ -1,0 +1,3 @@
+model,split,provenance,parameter_count,training_seconds,training_peak_gpu_bytes,inference_seconds_per_video,evaluation_peak_gpu_bytes
+baseline,TEST,user_supplied_echonet,33166785,,,0.012467213903981688,
+mamba,TEST,user_supplied_echonet,11393537,,,0.008426175650761206,

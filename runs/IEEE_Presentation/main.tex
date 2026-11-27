@@ -1,0 +1,193 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\usepackage{amsmath,graphicx,booktabs}
+
+\definecolor{IEEEblue}{RGB}{0,75,135}
+\setbeamercolor{structure}{fg=IEEEblue}
+\setbeamercolor{frametitle}{fg=white,bg=IEEEblue}
+\setbeamercolor{title}{fg=IEEEblue}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\title[Missing-Frame EF Prediction]{Missing-Frame-Aware Cardiac Ejection Fraction Prediction via Gap-Parameterized Selective SSM}
+\subtitle{Baseline (R3D-18) vs.\ Proposed Mamba (\textsc{GapSSM}) on EchoNet-Dynamic}
+\author{Cardi\_AI Project Team}
+\institute{Department of Computer Science and Engineering\\Project 6: Echocardiography Video Regression}
+\date{November 2026}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+\tableofcontents
+\end{frame}
+
+\section{Problem and Motivation}
+\begin{frame}{Problem Statement \& Clinical Motivation}
+\begin{itemize}
+    \item \textbf{Goal:} Directly regress Left-Ventricular Ejection Fraction (LVEF, \%) from 32-frame apical 4-chamber echocardiography clips.
+    \item \textbf{Real-World Challenge:} Clinical ultrasound videos frequently drop frames due to low frame rates, probe movement, compression, or acoustic shadowing.
+    \item \textbf{Why Missing Frames Matter:} EF depends on End-Diastole (ED, largest LV) and End-Systole (ES, smallest LV). Losing frames around ES or ED causes standard 3D CNNs to misestimate EF.
+    \item \textbf{Gap in Prior Work:} Standard 3D CNNs (R3D-18 / R(2+1)D-18) and standard SSMs assume uniform temporal spacing and degrade sharply under missing frames.
+\end{itemize}
+\end{frame}
+
+\section{Dataset and Experimental Setup}
+\begin{frame}{EchoNet-Dynamic Dataset \& Evaluation Protocol}
+\begin{columns}
+\column{0.52\textwidth}
+\begin{itemize}
+    \item \textbf{Dataset:} EchoNet-Dynamic ($10,030$ videos, $112\times 112$, 32 frames at 1-in-2 stride).
+    \item \textbf{Official Split:} $7,465$ Train / $1,288$ Val / Test ($N=200$ paired \texttt{main}, $N=98$ \texttt{phase}).
+    \item \textbf{Missing-Frame Conditions:}
+    \begin{itemize}
+        \item Patterns: \texttt{random}, consecutive \texttt{block}, and cardiac phases (\texttt{ed}, \texttt{es}, \texttt{systole}, \texttt{diastole}).
+        \item Ratios: $0\%, 10\%, 25\%, 50\%, 75\%$.
+        \item Handlings: \texttt{zero}, \texttt{removal}, \texttt{repeat}, \texttt{interpolate}.
+    \end{itemize}
+    \item \textbf{Uncertainty:} MC Dropout ($3$--$10$ passes).
+\end{itemize}
+\column{0.45\textwidth}
+\begin{table}\centering\scriptsize
+\caption{Model & Training Configuration}
+\begin{tabular}{lcc}\toprule
+Property & Baseline & \textsc{GapSSM} \\\midrule
+Backbone & R3D-18 & ResNet-18 + SSM \\
+Parameters & 33.17M & \textbf{11.39M} \\
+Train Corruption & No & Yes \\
+Epochs Run & 24 & 15 \\
+Best Val MAE & \textbf{5.08 pp} & 6.69 pp \\
+Inf.\ Time / Cond. & 12.47 ms & \textbf{8.43 ms} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{columns}
+\end{frame}
+
+\section{Proposed Architecture (GapSSM)}
+\begin{frame}{Proposed Innovation: \textsc{GapSSM} (Mamba-Inspired SSM)}
+\begin{itemize}
+    \item \textbf{1. Mask-Gated 2D Encoder:} GroupNorm ResNet-18 encodes \emph{only} observed frames ($m_t=1$); missing frames never enter the spatial encoder or causal 1D conv.
+    \item \textbf{2. Continuous-Time Gap Decay:} Across a gap $\Delta\tau_t = \tau_t - \tau_{\text{last}}$, latent state $\mathbf{h}_{t-1}$ decays via learned per-channel rates $\mathbf{r}_{\text{gap}}$:
+    \[
+        \mathbf{h}_{\text{before}} = \exp\bigl(\mathbf{A} \odot \text{softplus}(\mathbf{r}_{\text{gap}}) \cdot \max(0, \Delta\tau_t - 1)\bigr) \odot \mathbf{h}_{t-1}
+    \]
+    \item \textbf{3. State Holding (\texttt{hold\_missing}):} When $m_t=0$, $\mathbf{h}_t = \mathbf{h}_{t-1}$ and $\tau_{\text{last}}$ is preserved.
+    \item \textbf{4. ZOH Selective Update:} Exact zero-order-hold discretization with input-conditioned $\Delta_t, \mathbf{B}_t, \mathbf{C}_t$ and masked mean pooling.
+\end{itemize}
+\end{frame}
+
+\section{Training and Complete-Video Results}
+\begin{frame}{Training Curves: Loss \& Validation MAE}
+\begin{center}
+\includegraphics[width=0.92\textwidth,height=0.72\textheight,keepaspectratio]{figures/training_comparison.png}
+\end{center}
+\end{frame}
+
+\section{Missing-Frame Robustness Results}
+\begin{frame}{Random Missing Frames (\texttt{zero} handling, $N=200$)}
+\begin{columns}
+\column{0.52\textwidth}
+\includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{figures/TEST_main_random_zero.png}
+\column{0.46\textwidth}
+\begin{table}\centering\scriptsize
+\begin{tabular}{lcccc}\toprule
+Model & Ratio & MAE & $R^2$ & $\Delta$MAE \\\midrule
+Baseline & 0.00 & \textbf{5.29} & \textbf{0.627} & 0.00 \\
+Baseline & 0.25 & \textbf{6.41} & 0.345 & +1.12 \\
+Baseline & 0.50 & 7.98 & -0.068 & +2.69 \\
+Baseline & 0.75 & 8.52 & -0.219 & +3.23 \\\midrule
+\textsc{GapSSM} & 0.00 & 6.41 & 0.365 & 0.00 \\
+\textsc{GapSSM} & 0.25 & 6.46 & \textbf{0.358} & \textbf{+0.06} \\
+\textsc{GapSSM} & 0.50 & \textbf{6.48} & \textbf{0.365} & \textbf{+0.08} \\
+\textsc{GapSSM} & 0.75 & \textbf{6.46} & \textbf{0.348} & \textbf{+0.06} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Consecutive Block Missing Frames (\texttt{zero} handling, $N=200$)}
+\begin{columns}
+\column{0.52\textwidth}
+\includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{figures/TEST_main_block_zero.png}
+\column{0.46\textwidth}
+\begin{table}\centering\scriptsize
+\begin{tabular}{lcccc}\toprule
+Model & Ratio & MAE & Shift & $\Delta$MAE \\\midrule
+Baseline & 0.00 & \textbf{5.29} & 0.00 & 0.00 \\
+Baseline & 0.25 & 7.75 & 6.15 & +2.45 \\
+Baseline & 0.50 & 8.55 & 7.44 & +3.25 \\
+Baseline & 0.75 & 11.64 & 10.99 & +6.35 \\\midrule
+\textsc{GapSSM} & 0.00 & 6.41 & 0.00 & 0.00 \\
+\textsc{GapSSM} & 0.25 & \textbf{6.56} & \textbf{0.77} & \textbf{+0.16} \\
+\textsc{GapSSM} & 0.50 & \textbf{6.85} & \textbf{1.16} & \textbf{+0.45} \\
+\textsc{GapSSM} & 0.75 & \textbf{7.21} & \textbf{2.20} & \textbf{+0.81} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Cardiac-Cycle Position Sensitivity (ES Block, $N=98$)}
+\begin{columns}
+\column{0.52\textwidth}
+\includegraphics[width=\linewidth,height=0.68\textheight,keepaspectratio]{figures/TEST_phase_es_zero.png}
+\column{0.46\textwidth}
+\begin{table}\centering\scriptsize
+\caption{25\% Missingness by Phase (\texttt{zero})}
+\begin{tabular}{lccc}\toprule
+Position & Baseline MAE & \textsc{GapSSM} MAE & Base / Mamba Shift \\\midrule
+Complete & \textbf{3.78} & 5.60 & 0.00 / 0.00 \\
+\texttt{ed} & 8.27 & \textbf{5.49} & 7.19 / \textbf{0.95} \\
+\texttt{es} & 7.17 & \textbf{5.96} & 5.62 / \textbf{0.86} \\
+\texttt{systole} & 8.02 & \textbf{5.63} & 7.02 / \textbf{0.67} \\
+\texttt{diastole} & 7.26 & \textbf{5.81} & 6.32 / \textbf{0.64} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Input-Handling Invariance & AUC Robustness}
+\begin{table}\centering\small
+\caption{Normalized AUC-MAE ($\downarrow$ is better) Across Handlings & Cohorts}
+\begin{tabular}{llcc}\toprule
+Cohort / Pattern & Handling & Baseline Norm.\ AUC & \textsc{GapSSM} Norm.\ AUC \\\midrule
+Main / \texttt{random} & \texttt{zero} & 7.08 & \textbf{6.46} \\
+Main / \texttt{random} & \texttt{removal} & 14.18 & \textbf{6.45} \\
+Main / \texttt{block} & \texttt{zero} & 8.35 & \textbf{6.74} \\
+Main / \texttt{block} & \texttt{removal} & 14.54 & \textbf{6.74} \\
+Phase / \texttt{es} & \texttt{zero} & 8.02 & \textbf{5.93} \\
+Phase / \texttt{es} & \texttt{removal} & 15.82 & \textbf{5.93} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\vspace{0.3em}
+\begin{itemize}
+    \item \textsc{GapSSM} is invariant across \texttt{zero}, \texttt{repeat}, \texttt{interpolate}, and \texttt{removal} ($\approx 6.56$~pp at 25\% block).
+\end{itemize}
+\end{frame}
+
+\section{Deployment UI and Conclusion}
+\begin{frame}{Clinical Deployment UI (\texttt{app.py})}
+\begin{itemize}
+    \item Built an interactive \textbf{Gradio web interface} (\texttt{app.py}) for real-time Mamba EF prediction from \texttt{.avi}/\texttt{.mp4} echocardiography uploads.
+    \item Displays predicted LVEF (\%), MC Dropout uncertainty ($\pm$~std), clinical category, inference latency, and a kept-vs-dropped frame timeline.
+    \item Supports interactive missing-frame stress testing directly in the browser.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Conclusion & Future Work}
+\begin{itemize}
+    \item \textbf{Key Finding:} While R3D-18 achieves lower complete-video MAE ($5.29$ vs.\ $6.41$~pp), \textsc{GapSSM} achieves dramatic missing-frame robustness ($\Delta\text{MAE}=+0.06$~pp at 75\% random loss; $+0.81$~pp at 75\% block loss vs.\ $+6.35$~pp for R3D-18).
+    \item \textbf{Efficiency:} $2.9\times$ fewer parameters ($11.39$M vs.\ $33.17$M) and $32.4\%$ faster inference ($8.43$~ms vs.\ $12.47$~ms).
+    \item \textbf{Future Work:} ImageNet-pretrained 2D encoder, bidirectional SSM blocks with mean+max pooling, and full 1,288-video test evaluation.
+\end{itemize}
+\end{frame}
+
+\end{document}

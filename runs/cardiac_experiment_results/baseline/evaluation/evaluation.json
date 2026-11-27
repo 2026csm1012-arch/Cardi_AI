@@ -1,0 +1,44 @@
+{
+  "model": "baseline",
+  "checkpoint_sha256": "444c9c1169f18cecaa09c31c73d6b5cb9fc327e42d594436500e61aa9101f27e",
+  "bank_sha256": "f88cd17c5353dc234fd7829b466786a3cc428d4154f5355d24c1699fc904b298",
+  "manifest_sha256": "7c6125861a8030dca13a53ae48327aae75ebeb00c4d942b271072d2af0e4cdc9",
+  "split": "TEST",
+  "runtime": {
+    "device": "cuda",
+    "gpu": "Tesla T4",
+    "gpu_total_bytes": 15636037632,
+    "torch": "2.11.0+cu130",
+    "python": "3.13.16",
+    "batch_size": 2,
+    "workers": 2,
+    "amp": true,
+    "seed": 2026
+  },
+  "provenance": "user_supplied_echonet",
+  "preliminary": true,
+  "mc_passes": 3,
+  "parameter_count": 33166785,
+  "handlings": [
+    "zero",
+    "removal",
+    "repeat",
+    "interpolate"
+  ],
+  "phase_exclusions": {
+    "parity: (es - ed) must be divisible by stride.": 615,
+    "Video length (58) insufficient for phase clip (63).": 1,
+    "ED must be strictly before ES.": 11,
+    "ED/ES span exceeds or equals length - 1.": 1,
+    "Video length (50) insufficient for phase clip (63).": 1,
+    "Video length (60) insufficient for phase clip (63).": 1,
+    "Video length (59) insufficient for phase clip (63).": 1,
+    "Video length (36) insufficient for phase clip (63).": 1,
+    "Video length (61) insufficient for phase clip (63).": 1,
+    "missing_or_invalid_traces": 1
+  },
+  "timing": "batched forward; AMP enabled; synchronized",
+  "inference_seconds_per_video": 0.012467213903981688,
+  "predictions": 15840,
+  "total_eval_seconds": 1125.1978481719998
+}

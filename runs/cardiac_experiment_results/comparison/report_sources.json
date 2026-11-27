@@ -1,0 +1,8 @@
+{
+  "prediction_files": [
+    "/kaggle/working/cardiac_runs/baseline/evaluation/predictions.csv",
+    "/kaggle/working/cardiac_runs/mamba/evaluation/predictions.csv"
+  ],
+  "bank_sha256": "f88cd17c5353dc234fd7829b466786a3cc428d4154f5355d24c1699fc904b298",
+  "status": "PRELIMINARY"
+}
